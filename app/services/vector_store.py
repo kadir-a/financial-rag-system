@@ -18,7 +18,7 @@ class VectorStoreManager:
             embedding=self.embeddings,
             persist_directory=self.db_path,
             collection_name=collection_name
-        )
+        ) 
         print(f"Embeddings successfully stored in {self.db_path}")
         return vector_db
 
