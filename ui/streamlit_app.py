@@ -3,6 +3,7 @@ import os
 import sys
 import tempfile
 from dotenv import load_dotenv
+import time
 
 # --- CRITICAL PATCH 1: PATH RESOLUTION ---
 # Append the root directory to sys.path so Streamlit doesn't get trapped in the 'ui' folder.
@@ -45,18 +46,25 @@ with st.sidebar:
                 chunks = processor.process_pdf(tmp_path)
                 
                 vector_manager = VectorStoreManager()
-                # Updated to match the new OpenAI dimensions vault
-                vector_db = vector_manager.create_and_store_embeddings(chunks, "report_openai_1536")
-                retriever = vector_db.as_retriever(search_kwargs={"k": 3})
+                
+                # SOLUTION 1: Create a timestamped, unique vault for each report. Prevents data poisoning.
+                unique_vault_name = f"vault_{int(time.time())}"
+                vector_db = vector_manager.create_and_store_embeddings(chunks, unique_vault_name)
+                
+                # Expand the retrieval field of view (k=8) to ensure the engine sees the entire table.
+                retriever = vector_db.as_retriever(search_kwargs={"k": 8})
                 
                 llm_service = LLMService()
                 st.session_state.rag_chain = llm_service.create_rag_chain(retriever)
                 
-                # --- SECURITY PATCH: EVICT PROCESSED DATA FROM THE VAULT ---
+                # SOLUTION 2: Completely reset the brain (chat history) when a new report is uploaded!
+                st.session_state.messages = [{"role": "assistant", "content": "What insights are you looking for?"}]
+                
                 os.remove(tmp_path) 
                 
                 st.success("Engine active! Data processed. You can now start the analysis.")
-        else:
+                st.rerun() # Clear and refresh the screen
+        else:   
             st.error("Empty orders are not accepted. Please upload a PDF first!")
 
 # 4. TRADING BOARD (Main Chat Interface)
@@ -71,12 +79,12 @@ for msg in st.session_state.messages:
 if prompt := st.chat_input("What is the net loss for the period?"):
     st.chat_message("user", avatar="👤").write(prompt)
     st.session_state.messages.append({"role": "user", "content": prompt})
-    
+
     if st.session_state.rag_chain is None:
         warning_msg = "Engine is not connected yet. Please upload a report from the left sidebar and click 'Analyze Report'."
         st.chat_message("assistant",avatar="🧠").write(warning_msg)
         st.session_state.messages.append({"role": "assistant", "content": warning_msg})
-    else:
+    else:       
         with st.spinner("Scanning board data and executing analysis..."):
             
             history_tuples = [(msg["role"], msg["content"]) for msg in st.session_state.messages[:-1]]

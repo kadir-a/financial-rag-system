@@ -7,24 +7,35 @@ load_dotenv()
 
 class LLMService:
     def __init__(self):
-        # Initialize the OpenAI model (The Engine)
         self.llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
         
-       # --- CORE BRAIN: THE RUTHLESS BUT SMART ANALYST ---
+        # --- CORE BRAIN: THE RUTHLESS BUT SMART ANALYST ---
         self.qa_prompt = ChatPromptTemplate.from_template(
-            """You are an expert, highly intelligent, and professional financial analyst.
+            """You are a highly intelligent, realistic, and professional financial analyst.
             
-            STEP 1: Document Verification
-            Analyze the provided Context. If the context is clearly not a financial document, KAP disclosure, or corporate report (e.g., it is a CV/resume, recipe, personal letter, etc.), politely inform the user in a natural, conversational tone. NEVER use robotic prefixes like "Error:". (Example: "This document appears to be a resume rather than a financial report. Please upload a valid financial document for analysis.")
+            CRITICAL RULE FOR FINANCIAL TABLES:
+            When the user asks for a specific number from a balance sheet or income statement:
+            1. Find the exact row mentioned.
+            2. Follow the row across the Markdown '|' boundaries.
+            3. Match it with the exact column for the requested year.
             
-            STEP 2: Financial Analysis & Contextual Flexibility
-            If it IS a financial document, answer the user's question PRIMARILY based on the provided Context.
-            If the specific answer is NOT in the Context, but the user is asking a general question about the company's industry, background, or business model (e.g., "What does this company do?"), and you know the company's name from the Context, you MAY use your internal general knowledge. 
-            HOWEVER, you MUST clearly state the separation of sources: "This specific information is not in the provided report, but based on general market knowledge..."
+            STEP 3: Financial Table & Matrix Navigation
+            - NO MENTAL MATH: NEVER calculate totals yourself. NEVER claim that you added sub-items. Always state that you read the value directly from the total row.
+            - EXACT MATCHING: Pay close attention to adjectives (Current, Non-Current, Continued Operations vs. Total Profit).
             
-            For highly specific financial metrics (e.g., "What is the net profit?") that are not in the context, simply state: "This information is not available in the provided report." Never hallucinate financial numbers.
+            STEP 4: META-CONVERSATION & DEFENDING THE DATA (CRITICAL)
+            If the user says "Yanlış" (Wrong) or tries to force a different number (e.g., giving a fake number or confusing a sub-total with a grand total):
+            1. Explicitly state: "Tabloyu tekrar inceliyorum..." (Let me re-examine the table).
+            2. Re-read the context. 
+            3. DO NOT BLINDLY AGREE WITH THE USER. If the user's number belongs to a DIFFERENT row, correct them professionally. (Example: "7.937 is the Net Profit. The Continued Operations Profit is indeed 7.558.")
+            4. If the user's number is completely made up (e.g., 1.999), tell them firmly that this number does not exist in the report for that item, and stand by your original correct data.
+            5. Only apologize and change your answer IF you genuinely misread the table.
             
-            Reply naturally in the same language as the user's prompt (e.g., if the user asks in Turkish, reply in Turkish).
+            TONE:
+            Be direct, objective, and professional. Speak like a senior financial analyst. Do not be overly apologetic if you are right.
+
+            Chat History:
+            {chat_history}
 
             Context:
             {context}
@@ -37,8 +48,8 @@ class LLMService:
         # --- TRANSLATOR BRAIN: CONTEXTUALIZER ---
         self.condense_prompt = ChatPromptTemplate.from_template(
             """Review the chat history and the user's latest question below.
-            If the user's question refers to a previous topic in the history, rewrite it into a standalone, clear search query.
-            If the question is already clear and standalone, leave it as is. ONLY return the rewritten standalone query.
+            If the user's question refers to a previous topic or your previous answers, rewrite it into a standalone query that captures the intent.
+            ONLY return the rewritten query.
             
             History:
             {chat_history}
@@ -48,7 +59,6 @@ class LLMService:
         )
 
     def create_rag_chain(self, retriever):
-        # --- MANUAL TRANSMISSION: Custom Engine to Eliminate LangChain Architecture Errors ---
         class CustomRAG:
             def __init__(self, llm, qa_prompt, condense_prompt, retriever):
                 self.llm = llm
@@ -65,20 +75,26 @@ class LLMService:
                 user_input = payload["input"]
                 chat_history = payload["chat_history"]
                 
-                # 1. Translator Brain: Clarify and isolate the core question
+                history_str = self.format_history(chat_history)
+                
+                # 1. TRANSLATOR BRAIN: Simplifies the query strictly for Vector Search
                 if chat_history:
-                    history_str = self.format_history(chat_history)
                     condense_msg = self.condense_prompt.format_messages(chat_history=history_str, input=user_input)
                     search_query = self.llm.invoke(condense_msg).content 
                 else:
                     search_query = user_input
                     
-                # 2. Vector Search: (Guarantees string payload to prevent Dict/Type errors)
+                # 2. VECTOR SEARCH: Executes the search using the sanitized "search_query"
                 docs = self.retriever.invoke(str(search_query))
                 context_str = "\n\n".join(doc.page_content for doc in docs)
                 
-                # 3. Execute the Core Analysis: Hit the target and extract the answer
-                qa_msg = self.qa_prompt.format_messages(context=context_str, input=search_query)
+                # 3. CORE ANALYST BRAIN: (CRITICAL FIX HERE)
+                # We feed the Analyst the raw user input, NOT the filtered search query!
+                qa_msg = self.qa_prompt.format_messages(
+                    chat_history=history_str, 
+                    context=context_str, 
+                    input=user_input  # <-- CENSORSHIP REMOVED
+                )
                 final_answer = self.llm.invoke(qa_msg).content
                 
                 return final_answer
