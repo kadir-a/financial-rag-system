@@ -6,23 +6,23 @@ import os
 import shutil
 import uuid
 
-# --- SİSTEMİN BEYNİNİ (SERVICES) API'YE BAĞLIYORUZ ---
+# --- CORE SERVICES INTEGRATION ---
 from services.ingestion import FinancialPDFProcessor
 from services.vector_store import VectorStoreManager
 from services.llm_service import LLMService
 
 app = FastAPI(title="FinSight AI Backend API", version="1.0")
 
-# Global hafıza (Geçici olarak aktif koleksiyon adını ve RAG chain'i tutar)
+# Global state memory (Temporarily stores the active collection name and RAG chain)
 global_state = {
     "current_collection_name": None,
     "rag_chain": None
 }
 
-# Payload Formatları
+# Payload Formats
 class QueryRequest(BaseModel):
     question: str
-    chat_history: list = []  # Soru ile birlikte geçmiş konuşmalar da gelecek
+    chat_history: list = []  # Includes previous conversation context
 
 @app.get("/")
 def health_check():
@@ -30,11 +30,11 @@ def health_check():
 
 @app.post("/upload/")
 async def upload_document(file: UploadFile = File(...)):
-    """PDF'i alır, okur, vektöre çevirir ve sistemi soruya hazır hale getirir."""
+    """Ingests a PDF, parses it, creates vector embeddings, and prepares the RAG chain."""
     if not file.filename.endswith('.pdf'):
-        raise HTTPException(status_code=400, detail="Sadece PDF dosyaları kabul edilmektedir.")
+        raise HTTPException(status_code=400, detail="Only PDF files are accepted.")
     
-    # 1. Dosyayı geçici olarak diskte tut (LlamaParse'ın okuyabilmesi için)
+    # 1. Temporarily store the file on disk (Required for LlamaParse processing)
     temp_dir = "./data/temp_uploads"
     os.makedirs(temp_dir, exist_ok=True)
     file_path = os.path.join(temp_dir, file.filename)
@@ -43,64 +43,64 @@ async def upload_document(file: UploadFile = File(...)):
         shutil.copyfileobj(file.file, buffer)
         
     try:
-        # 2. Motorları Çalıştır
+        # 2. Initialize Core Engines
         processor = FinancialPDFProcessor()
         vector_manager = VectorStoreManager()
         llm_service = LLMService()
         
-        # 3. PDF'i İşle (Ingestion)
-        print(f"API: {file.filename} işleniyor...")
+        # 3. Document Ingestion
+        print(f"API: Processing {file.filename}...")
         chunks = processor.process_pdf(file_path)
         
-        # 4. Her yüklemede benzersiz bir kasa aç (Veri Sızıntısını Önlemek İçin)
+        # 4. Generate a unique vault for each upload (Prevents data leakage)
         collection_name = f"vault_{int(time.time())}"
         global_state["current_collection_name"] = collection_name
         
-        # 5. Vektörlere Çevir (Vector Store)
+        # 5. Convert to Embeddings (Vector Store)
         vector_db = vector_manager.create_and_store_embeddings(chunks, collection_name)
         
-        # 6. Retriever (Arama Motoru) Kur ve RAG Borusunu (CustomRAG) Hazırla
+        # 6. Configure Retriever and establish the Custom RAG pipeline
         retriever = vector_db.as_retriever(search_kwargs={"k": 5})
         global_state["rag_chain"] = llm_service.create_rag_chain(retriever)
         
-        # 7. Geçici dosyayı temizle
+        # 7. Cleanup temporary file
         os.remove(file_path)
         
         return {
             "filename": file.filename, 
             "status": "success", 
             "collection_id": collection_name,
-            "message": "Doküman başarıyla işlendi ve vektör kasasına aktarıldı."
+            "message": "Document successfully ingested and stored in the vector vault."
         }
         
     except Exception as e:
         if os.path.exists(file_path):
             os.remove(file_path)
-        raise HTTPException(status_code=500, detail=f"PDF İşleme Hatası: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"PDF Processing Error: {str(e)}")
 
 @app.post("/ask/")
 async def ask_ai(query: QueryRequest):
-    """Kullanıcının sorusunu alır, aktif kasada arar ve cevabı döner."""
+    """Receives the user query, searches the active vault, and returns the generated answer."""
     if not query.question:
-        raise HTTPException(status_code=400, detail="Soru boş olamaz.")
+        raise HTTPException(status_code=400, detail="Question cannot be empty.")
         
     if not global_state["rag_chain"]:
-        raise HTTPException(status_code=400, detail="Önce bir finansal rapor yüklemelisiniz.")
+        raise HTTPException(status_code=400, detail="You must upload a financial report first.")
     
     try:
-        # Payload'u RAG motorunun beklediği formata sokuyoruz
+        # Format payload for the RAG engine
         payload = {
             "input": query.question,
             "chat_history": query.chat_history
         }
         
-        # Manuel vites CustomRAG'i ateşle
+        # Trigger the CustomRAG chain
         answer = global_state["rag_chain"].invoke(payload)
         
         return {"answer": answer}
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"LLM Hatası: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"LLM Error: {str(e)}")
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
