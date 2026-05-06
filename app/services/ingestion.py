@@ -28,7 +28,7 @@ class FinancialPDFProcessor:
             raise FileNotFoundError(f"File not found: {pdf_path}")
             
         print(f"🚨 LlamaParse Active: Converting '{pdf_path}' into a matrix...")
-        
+
         # Parse the PDF with LlamaParse (Runs via API)
         try:
             parsed_documents = self.parser.load_data(pdf_path)
@@ -45,7 +45,7 @@ class FinancialPDFProcessor:
         print(f"✅ Process Complete! A total of {len(chunks)} matrix-compatible chunks created.")
         
         return chunks
-
+ 
 # Test if the file is run directly (Legacy structure preserved)
 if __name__ == "__main__":
     processor = FinancialPDFProcessor()

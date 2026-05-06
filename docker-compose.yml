@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  # 1. CORE ENGINE (FastAPI Backend)
+  backend:
+    build: .
+    container_name: finsight_backend
+    # Initialize the REST API on port 8000
+    command: uvicorn api.main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    volumes:
+      # Persistent storage mappings to prevent data loss and resolve file locks
+      - ./data/chroma_db:/app/data/chroma_db
+      - ./data/temp_uploads:/app/data/temp_uploads
+    env_file:
+      - .env
+    restart: unless-stopped
+
+  # 2. CLIENT INTERFACE (Streamlit Frontend)
+  frontend:
+    build: .
+    container_name: finsight_frontend
+    # Initialize the UI on port 8501
+    command: python -m streamlit run ui/streamlit_app.py --server.port=8501 --server.address=0.0.0.0
+    ports:
+      - "8501:8501"
+    depends_on:
+      - backend # Ensure the backend is fully operational before launching the frontend
+    env_file:
+      - .env
+    restart: unless-stopped

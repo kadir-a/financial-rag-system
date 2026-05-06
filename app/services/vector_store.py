@@ -22,7 +22,7 @@ class VectorStoreManager:
                     print(f"🧹 Old ghost vault successfully destroyed: {folder}")
                 except Exception:
                     # If Windows is holding the file (PermissionError), do not crash the system, pass silently.
-                    # It will be deleted on the next server restart anyway.
+                    # It will be deleted on the next server restart anyway.docker compose up -d --build
                     pass    
                     
     def create_and_store_embeddings(self, chunks: list, collection_name: str):

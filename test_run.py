@@ -5,7 +5,7 @@ from app.services.vector_store import VectorStoreManager
 from app.services.llm_service import LLMService
 
 def main():
-    print("🚀 Starting Operation: Headless RAG System Validation...")
+    print("🚀Starting Operation: Headless RAG System Validation...")
     
     current_dir = os.path.dirname(os.path.abspath(__file__))
     

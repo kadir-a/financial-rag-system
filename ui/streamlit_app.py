@@ -1,99 +1,72 @@
 import streamlit as st
-import os
-import sys
-import tempfile
-from dotenv import load_dotenv
-import time
+import requests
 
-# --- CRITICAL PATCH 1: PATH RESOLUTION ---
-# Append the root directory to sys.path so Streamlit doesn't get trapped in the 'ui' folder.
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+# Backend API Endpoint (Resolved via Docker Compose internal network)
+API_URL = "http://backend:8000"
 
-# --- CRITICAL PATCH 2: ENVIRONMENT VARIABLES ---
-# Unlock the hidden vault: Load the API keys from the .env file.
-load_dotenv()
+# UI Configuration
+st.set_page_config(page_title="FinSight AI Terminal", page_icon="⚡", layout="wide")
+st.title("⚡ FinSight AI | Enterprise Financial Intelligence Terminal")
 
-# Import the backend engines (Now able to locate the 'app' module)
-from app.services.ingestion import FinancialPDFProcessor
-from app.services.vector_store import VectorStoreManager
-from app.services.llm_service import LLMService
-
-# 1. PAGE CONFIGURATION
-st.set_page_config(page_title="Financial RAG", page_icon="📈", layout="wide")
-
-# 2. SESSION STATE (Memory & Vault)
-if "messages" not in st.session_state:
-    st.session_state.messages = [{"role": "assistant", "content": "What insights are you looking for?"}]
-if "rag_chain" not in st.session_state:
-    st.session_state.rag_chain = None
-
-# 3. SIDEBAR (Control Center & Data Ingestion)
+# Sidebar: Control Center
 with st.sidebar:
-    st.title("⚙️ Control Center")
+    st.header("⚙️ Control Center")
+    uploaded_file = st.file_uploader("Upload Financial Report (PDF)", type="pdf")
     
-    st.markdown("---")
-    uploaded_file = st.file_uploader("Upload Financial Report (PDF)", type=["pdf"])
-    
-    if st.button("Analyze Report", type="primary", use_container_width=True):
+    if st.button("Ingest Document"):
         if uploaded_file is not None:
-            with st.spinner("Reading report and converting to vectors... Please wait."):
-                
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
-                    tmp_file.write(uploaded_file.getvalue())
-                    tmp_path = tmp_file.name
-                
-                processor = FinancialPDFProcessor()
-                chunks = processor.process_pdf(tmp_path)
-                
-                vector_manager = VectorStoreManager()
-                
-                # SOLUTION 1: Create a timestamped, unique vault for each report. Prevents data poisoning.
-                unique_vault_name = f"vault_{int(time.time())}"
-                vector_db = vector_manager.create_and_store_embeddings(chunks, unique_vault_name)
-                
-                # Expand the retrieval field of view (k=8) to ensure the engine sees the entire table.
-                retriever = vector_db.as_retriever(search_kwargs={"k": 8})
-                
-                llm_service = LLMService()
-                st.session_state.rag_chain = llm_service.create_rag_chain(retriever)
-                
-                # SOLUTION 2: Completely reset the brain (chat history) when a new report is uploaded!
-                st.session_state.messages = [{"role": "assistant", "content": "What insights are you looking for?"}]
-                
-                os.remove(tmp_path) 
-                
-                st.success("Engine active! Data processed. You can now start the analysis.")
-                st.rerun() # Clear and refresh the screen
-        else:   
-            st.error("Empty orders are not accepted. Please upload a PDF first!")
+            with st.spinner("Processing... Converting report into matrix data..."):
+                # Transmit PDF directly to the Backend API
+                files = {"file": (uploaded_file.name, uploaded_file.getvalue(), "application/pdf")}
+                try:
+                    response = requests.post(f"{API_URL}/upload/", files=files)
+                    if response.status_code == 200:
+                        st.success("✅ Document successfully ingested into the vector vault.")
+                        # Purge session state (chat history) upon new document ingestion
+                        st.session_state.messages = []
+                    else:
+                        st.error(f"Ingestion Failed: {response.json().get('detail')}")
+                except Exception as e:
+                    st.error("Connection Error: Unable to reach the backend service. Check Docker status.")
+        else:
+            st.warning("Please upload a PDF document before proceeding.")
 
-# 4. TRADING BOARD (Main Chat Interface)
-st.title("📈 Financial Intelligence RAG Assistant")
-st.markdown("Upload reports, build the knowledge base, and start querying.")
+# Session State Initialization for Chat History
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
-for msg in st.session_state.messages:
-    msg_avatar = "👤" if msg["role"] == "user" else "🧠"
-    st.chat_message(msg["role"], avatar=msg_avatar).write(msg["content"])
+# Render Chat History
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
 
-# 5. ORDER ENTRY & GPT RESPONSE (User Input)
-if prompt := st.chat_input("What is the net loss for the period?"):
-    st.chat_message("user", avatar="👤").write(prompt)
+# User Query Execution
+if prompt := st.chat_input("What insights do you need from the financial report?"):
+    # 1. Display User Query
     st.session_state.messages.append({"role": "user", "content": prompt})
-
-    if st.session_state.rag_chain is None:
-        warning_msg = "Engine is not connected yet. Please upload a report from the left sidebar and click 'Analyze Report'."
-        st.chat_message("assistant",avatar="🧠").write(warning_msg)
-        st.session_state.messages.append({"role": "assistant", "content": warning_msg})
-    else:       
-        with st.spinner("Scanning board data and executing analysis..."):
-            
-            history_tuples = [(msg["role"], msg["content"]) for msg in st.session_state.messages[:-1]]
-            
-            # The engine now returns a direct string, no need to search for an 'answer' key!
-            final_answer = st.session_state.rag_chain.invoke({
-                "input": prompt,
-                "chat_history": history_tuples
-            })
-            
-            st.chat_message("assistant", avatar="🧠").write(final_answer)
-            st.session_state.messages.append({"role": "assistant", "content": final_answer})
+    with st.chat_message("user"):
+        st.markdown(prompt)
+        
+    # 2. Transmit Query to Backend API
+    with st.chat_message("assistant"):
+        with st.spinner("Analyst is retrieving data..."):
+            try:
+                # Format chat history into a tuple list for the API payload
+                chat_history = [(msg["role"], msg["content"]) for msg in st.session_state.messages[:-1]]
+                
+                payload = {
+                    "question": prompt,
+                    "chat_history": chat_history
+                }
+                
+                response = requests.post(f"{API_URL}/ask/", json=payload)
+                
+                if response.status_code == 200:
+                    answer = response.json().get("answer")
+                    st.markdown(answer)
+                    st.session_state.messages.append({"role": "assistant", "content": answer})
+                else:
+                    error_msg = response.json().get('detail', 'An unknown error occurred.')
+                    st.error(f"API Error: {error_msg}")
+            except Exception as e:
+                st.error("Service Unavailable: Cannot reach the backend API. Please contact system administration.")
