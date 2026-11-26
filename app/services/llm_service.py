@@ -1,9 +1,19 @@
 import os
+import re
+from time import perf_counter
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Arçelik's parsed profit distribution table can place its two basis
+# labels one cell before their numeric columns.
+SHIFTED_PROFIT_HEADERS = re.compile(
+    r"^(\|[ \t]*\|)[ \t]*(SPK['’]ya göre)[ \t]*\|"
+    r"[ \t]*(Yasal Kayıtlara \(YK\) göre)[ \t]*\|[ \t]*\|[ \t]*$",
+    flags=re.MULTILINE | re.IGNORECASE,
+)
 
 class LLMService:
     def __init__(self):
@@ -72,21 +82,35 @@ class LLMService:
                 return "\n".join([f"{role.capitalize()}: {msg}" for role, msg in history_tuples])
 
             def invoke(self, payload):
+                return self.invoke_with_trace(payload)["answer"]
+
+            def invoke_with_trace(self, payload):
+                started = perf_counter()
                 user_input = payload["input"]
                 chat_history = payload["chat_history"]
                 
                 history_str = self.format_history(chat_history)
                 
                 # 1. TRANSLATOR BRAIN: Simplifies the query strictly for Vector Search
+                rewrite_response = None
                 if chat_history:
                     condense_msg = self.condense_prompt.format_messages(chat_history=history_str, input=user_input)
-                    search_query = self.llm.invoke(condense_msg).content 
+                    rewrite_response = self.llm.invoke(condense_msg)
+                    search_query = rewrite_response.content
                 else:
                     search_query = user_input
                     
                 # 2. VECTOR SEARCH: Executes the search using the sanitized "search_query"
+                retrieval_started = perf_counter()
                 docs = self.retriever.invoke(str(search_query))
-                context_str = "\n\n".join(doc.page_content for doc in docs)
+                retrieval_seconds = perf_counter() - retrieval_started
+                contexts = [doc.page_content for doc in docs]
+                raw_contexts = contexts
+                contexts = [
+                    SHIFTED_PROFIT_HEADERS.sub(r"| | | \2 | \3 |", chunk)
+                    for chunk in raw_contexts
+                ]
+                context_str = "\n\n".join(contexts)
                 
                 # 3. CORE ANALYST BRAIN: (CRITICAL FIX HERE)
                 # We feed the Analyst the raw user input, NOT the filtered search query!
@@ -95,8 +119,24 @@ class LLMService:
                     context=context_str, 
                     input=user_input  # <-- CENSORSHIP REMOVED
                 )
-                final_answer = self.llm.invoke(qa_msg).content
-                
-                return final_answer
+                generation_started = perf_counter()
+                response = self.llm.invoke(qa_msg)
+                finished = perf_counter()
+
+                return {
+                    "answer": response.content,
+                    "search_query": search_query,
+                    "contexts": contexts,
+                    "raw_contexts": raw_contexts,
+                    "latency_seconds": {
+                        "total": finished - started,
+                        "retrieval": retrieval_seconds,
+                        "generation": finished - generation_started,
+                    },
+                    "chat_usage": {
+                        "rewrite": getattr(rewrite_response, "usage_metadata", None),
+                        "generation": getattr(response, "usage_metadata", None),
+                    },
+                }
         
         return CustomRAG(self.llm, self.qa_prompt, self.condense_prompt, retriever)
