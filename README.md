@@ -91,6 +91,85 @@ docker compose up -d --build
 
 ---
 
+## RAG evaluation
+
+Run the same RAG services as the backend against a single verified financial
+report. Use a local `.env` with the API keys configured as described above.
+Create a UTF-8 JSONL file with one question per line. Each row needs `id`,
+`category`, `report` (the exact PDF filename), `split` (`dev` or `test`),
+`question`, `expected_answer`, `answerable`, and `gold_evidence`. Add
+`source_page` for answer review and `history` as a list of `[role, message]`
+pairs for follow-up questions. Check expected answers and their currency,
+scale, and period against the PDF. For questions without an answer in the
+report, use an empty evidence list and record the expected abstention.
+
+```bash
+python -m eval.evaluate --pdf report.pdf --dataset eval/dataset.jsonl --split dev --k 5 --output eval/results/dev-k5.json
+```
+
+The JSON records the answer, rewritten query, retrieved text, timings, and
+chat token counts when reported by the provider. It summarizes retrieval
+hit rate and latency. A retrieval hit requires one retrieved chunk to
+contain all listed evidence fragments. Use distinctive text from one
+source passage for this check. Review answer correctness and failure mode
+against the PDF, especially for ambiguous periods, incorrect scales, and
+unsupported answers. Keep result files local if they contain private data.
+
+### Arçelik pilot results
+
+Five development questions were manually scored against the source PDF. Both
+runs requested up to five retrieval chunks per question.
+
+| Metric | Baseline | Header alignment |
+| --- | ---: | ---: |
+| Correct answers | 4/5 | 5/5 |
+| Correct evidence retrieved (answerable cases) | 4/4 | 4/4 |
+| Median response latency | 1.52 s | 1.96 s |
+
+The baseline assigned the legal-record amount to the SPK column. The raw
+Markdown placed both headings one cell to the left. Aligning those headings
+before generation corrected the SPK answer. The first evidence counter
+missed a misspelling in the retrieved donations row. Both evidence counts
+above use the revised evidence fragments. These results cover one
+five-page PDF extract and one run per configuration.
+
+### 35-question evaluation
+
+The dataset covers two Turkish financial documents: a five-page excerpt
+from Arçelik's 2025 annual report and PEKGY's Q1 2026 standalone financial
+statements. Questions include exact values, period comparisons, follow-ups
+with supplied chat history, and questions without an answer in the PDF.
+All runs used the final Arçelik header-alignment rule and `k=5`.
+Answers were graded manually against the PDFs, requiring the requested
+amount, sign, period, and any explicit detail. Retrieval was measured
+automatically by matching the expected text fragments within a chunk.
+Questions without a source answer are excluded from retrieval counts.
+
+| Split | Exact answers | Automatic evidence hits | Median response latency | p95 |
+| --- | ---: | ---: | ---: | ---: |
+| Arçelik development | 14/15 | 12/14 | 3.36 s | 39.81 s |
+| PEKGY development | 10/10 | 9/9 | 1.51 s | 2.59 s |
+| PEKGY held-out questions | 8/10 | 6/8 | 1.99 s | 3.55 s |
+| **Total** | **32/35** | **27/31** | | |
+
+Manual review confirmed relevant source text was retrieved for all 14
+answerable Arçelik cases. The automatic check missed two rows because
+the parsed wording differed from the PDF. One Arçelik answer omitted
+the start-of-year detail. On the PEKGY held-out split, the model used
+unrelated equity-table values for an inventory comparison, and it
+reported TL 9,553,380,230 for total equity instead of TL 9,552,280,230.
+The exact expected evidence was absent from the retrieved text in both
+cases. All four questions without an answer in the PDFs were handled
+correctly.
+
+The held-out split contains new questions on PEKGY, which also appears
+in development. The sample covers two PDFs and one run per split, so the
+results describe this benchmark. Latency excludes PDF ingestion and
+embedding the document. The Arçelik developer-run p95 was the slowest
+question in that small sample. For future analysis, compare the indexed
+text with the PDF to distinguish parsing issues from retrieval misses,
+and require support from the requested table before returning a value.
+
 ## 🚧 Limitations & Roadmap (WIP)
 
 While functional, this pipeline is in active development to address the following technical benchmarks:
