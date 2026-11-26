@@ -1,5 +1,5 @@
-import streamlit as st
 import requests
+import streamlit as st
 
 # Backend API Endpoint (Resolved via Docker Compose internal network)
 API_URL = "http://backend:8000"
@@ -26,8 +26,9 @@ with st.sidebar:
                         st.session_state.messages = []
                     else:
                         st.error(f"Ingestion Failed: {response.json().get('detail')}")
-                except Exception as e:
-                    st.error("Connection Error: Unable to reach the backend service. Check Docker status.")
+                except Exception:
+                    st.error("Connection Error: Unable to reach the backend service. "
+                             "Check Docker status.")
         else:
             st.warning("Please upload a PDF document before proceeding.")
 
@@ -52,7 +53,8 @@ if prompt := st.chat_input("What insights do you need from the financial report?
         with st.spinner("Analyst is retrieving data..."):
             try:
                 # Format chat history into a tuple list for the API payload
-                chat_history = [(msg["role"], msg["content"]) for msg in st.session_state.messages[:-1]]
+                chat_history = [(msg["role"], msg["content"])
+                                 for msg in st.session_state.messages[:-1]]
                 
                 payload = {
                     "question": prompt,
@@ -68,5 +70,7 @@ if prompt := st.chat_input("What insights do you need from the financial report?
                 else:
                     error_msg = response.json().get('detail', 'An unknown error occurred.')
                     st.error(f"API Error: {error_msg}")
-            except Exception as e:
-                st.error("Service Unavailable: Cannot reach the backend API. Please contact system administration.")
+            except Exception:
+                st.error(
+                    "Service Unavailable: Cannot reach the backend API. "
+                    "Please contact system administration.")

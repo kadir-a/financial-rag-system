@@ -1,3 +1,5 @@
+[![CI](https://github.com/kadir-a/financial-rag-system/actions/workflows/ci.yml/badge.svg)](https://github.com/kadir-a/financial-rag-system/actions/workflows/ci.yml)
+
 # ⚡ FinSight AI: Enterprise-Grade Financial RAG Pipeline
 
 An end-to-end, production-oriented Retrieval-Augmented Generation (RAG) system designed for deterministic data extraction and analytical reasoning over complex financial reports (Balance Sheets, Income Statements, Cash Flow Statements).
@@ -177,3 +179,14 @@ While functional, this pipeline is in active development to address the followin
 * **Analytical Reasoning:** Current reliance on `gpt-4o-mini` is sufficient for retrieval but requires upgrading for complex multi-step financial growth analysis.
 * **Quantitative Execution:** The roadmap includes integrating a **Pandas Agent** or **Python REPL** to shift from text-based reading to deterministic mathematical execution over retrieved matrices.
 * **Multi-Document Synthesis:** Future iterations will allow cross-referencing multiple historical reports within a single isolated vault.
+
+
+## Testing
+
+Use a Python 3.10 virtual environment. Install dependencies once, then run the offline suite without API keys.
+
+```bash
+pip install -r requirements.txt -r requirements-dev.txt
+ruff check
+pytest -q --cov=app --cov=eval
+```

@@ -1,15 +1,15 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
-from pydantic import BaseModel
-import uvicorn
-import time
 import os
 import shutil
-import uuid
+import time
+
+import uvicorn
+from fastapi import FastAPI, File, HTTPException, UploadFile
+from pydantic import BaseModel
 
 # --- CORE SERVICES INTEGRATION ---
 from services.ingestion import FinancialPDFProcessor
-from services.vector_store import VectorStoreManager
 from services.llm_service import LLMService
+from services.vector_store import VectorStoreManager
 
 app = FastAPI(title="FinSight AI Backend API", version="1.0")
 
@@ -81,7 +81,7 @@ async def upload_document(file: UploadFile = File(...)):
 @app.post("/ask/")
 async def ask_ai(query: QueryRequest):
     """Receives the user query, searches the active vault, and returns the generated answer."""
-    if not query.question:
+    if not query.question.strip():
         raise HTTPException(status_code=400, detail="Question cannot be empty.")
         
     if not global_state["rag_chain"]:

@@ -1,0 +1,15 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [".", "app"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+extend-exclude = ["*.ipynb"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+
+# Preserve the benchmarked multi-line prompt literals exactly.
+[tool.ruff.lint.per-file-ignores]
+"app/services/llm_service.py" = ["E501"]

@@ -68,13 +68,20 @@ def evaluate(chain, cases):
             "input": case["question"],
             "chat_history": case.get("history", []),
         })
-        rows.append({
-            "case": case,
-            **trace,
-            "evidence_hit": evidence_hit(trace.get("raw_contexts", trace["contexts"]), case["gold_evidence"])
-            if case["answerable"] else None,
-            "review": {"answer_correct": None, "failure_mode": None},
-        })
+        rows.append(
+            {
+                "case": case,
+                **trace,
+                "evidence_hit": (
+                    evidence_hit(
+                        trace.get("raw_contexts", trace["contexts"]), case["gold_evidence"]
+                    )
+                    if case["answerable"]
+                    else None
+                ),
+                "review": {"answer_correct": None, "failure_mode": None},
+            }
+        )
     return rows
 
 

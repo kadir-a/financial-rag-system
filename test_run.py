@@ -1,20 +1,23 @@
 import os
 import time
+
 from app.services.ingestion import FinancialPDFProcessor
-from app.services.vector_store import VectorStoreManager
 from app.services.llm_service import LLMService
+from app.services.vector_store import VectorStoreManager
+
 
 def main():
     print("🚀Starting Operation: Headless RAG System Validation...")
     
     current_dir = os.path.dirname(os.path.abspath(__file__))
     
-    # Placeholder for headless testing. You can place any PDF named 'sample_report.pdf' here to test the engine directly.
+    # Place a sample_report.pdf here for the headless test.
     pdf_path = os.path.join(current_dir, "data", "source_pdfs", "sample_report.pdf")
     
     if not os.path.exists(pdf_path):
         print(f"⚠️ System Halt: Test PDF not found at {pdf_path}.")
-        print("Please place a 'sample_report.pdf' in the directory to run the headless integration test.")
+        print("Please place a 'sample_report.pdf' in the directory to run the "
+              "headless integration test.")
         return
 
     # 1. Ingestion Engine

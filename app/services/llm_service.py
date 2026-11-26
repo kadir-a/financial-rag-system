@@ -1,9 +1,9 @@
-import os
 import re
 from time import perf_counter
-from langchain_openai import ChatOpenAI
-from langchain_core.prompts import ChatPromptTemplate
+
 from dotenv import load_dotenv
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_openai import ChatOpenAI
 
 load_dotenv()
 
@@ -14,6 +14,10 @@ SHIFTED_PROFIT_HEADERS = re.compile(
     r"[ \t]*(Yasal Kayıtlara \(YK\) göre)[ \t]*\|[ \t]*\|[ \t]*$",
     flags=re.MULTILINE | re.IGNORECASE,
 )
+
+def align_profit_headers(chunk):
+    return SHIFTED_PROFIT_HEADERS.sub(r"| | | \2 | \3 |", chunk)
+
 
 class LLMService:
     def __init__(self):
@@ -94,7 +98,8 @@ class LLMService:
                 # 1. TRANSLATOR BRAIN: Simplifies the query strictly for Vector Search
                 rewrite_response = None
                 if chat_history:
-                    condense_msg = self.condense_prompt.format_messages(chat_history=history_str, input=user_input)
+                    condense_msg = self.condense_prompt.format_messages(
+                        chat_history=history_str, input=user_input)
                     rewrite_response = self.llm.invoke(condense_msg)
                     search_query = rewrite_response.content
                 else:
@@ -107,7 +112,7 @@ class LLMService:
                 contexts = [doc.page_content for doc in docs]
                 raw_contexts = contexts
                 contexts = [
-                    SHIFTED_PROFIT_HEADERS.sub(r"| | | \2 | \3 |", chunk)
+                    align_profit_headers(chunk)
                     for chunk in raw_contexts
                 ]
                 context_str = "\n\n".join(contexts)
