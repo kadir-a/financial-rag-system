@@ -1,12 +1,13 @@
-version: '3.8'
-
 services:
   # 1. CORE ENGINE (FastAPI Backend)
   backend:
     build: .
     container_name: finsight_backend
     # Initialize the REST API on port 8000
-    command: uvicorn api.main:app --host 0.0.0.0 --port 8000
+    command: sh docker/backend.sh
+    depends_on:
+      postgres:
+        condition: service_healthy
     ports:
       - "8000:8000"
     volumes:
@@ -30,3 +31,19 @@ services:
     env_file:
       - .env
     restart: unless-stopped
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+volumes:
+  postgres_data:

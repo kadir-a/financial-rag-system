@@ -15,7 +15,7 @@ RUN apt-get update && apt-get install -y \
 
 # 5. Copy requirements and install dependencies (optimized for Docker cache)
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt "psycopg[binary]>=3.1,<4"
 
 # 6. Copy the entire project payload
 COPY . .

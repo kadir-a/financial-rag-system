@@ -1,5 +1,6 @@
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["postgres: requires a migrated PostgreSQL database via DATABASE_URL"]
 pythonpath = [".", "app"]
 
 [tool.ruff]

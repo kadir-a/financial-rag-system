@@ -130,9 +130,12 @@ def main():
         manager = VectorStoreManager(base_db_path=temp_dir)
         database = manager.create_and_store_embeddings(chunks, "finsight_eval")
         retriever = database.as_retriever(search_kwargs={"k": args.k})
-        rows = evaluate(LLMService().create_rag_chain(retriever), cases)
+        service = LLMService()
+        rows = evaluate(service.create_rag_chain(retriever), cases)
         result = {
             "report": args.pdf.name,
+            "model": service.llm.model_name,
+            "embedding_model": manager.embeddings.model,
             "split": args.split,
             "k": args.k,
             "summary": summarize(rows),

@@ -76,7 +76,7 @@ cd financial-rag-system
 ```
 
 **2. Configure Environment Variables:**
-Create a `.env` file in the root directory and add your API keys:
+Copy `.env.example` to `.env`. Configure the PostgreSQL variables described in the Database section and set your API keys:
 ```env
 OPENAI_API_KEY=your_openai_key
 LLAMA_CLOUD_API_KEY=your_llama_cloud_key
@@ -171,6 +171,158 @@ embedding the document. The Arçelik developer-run p95 was the slowest
 question in that small sample. For future analysis, compare the indexed
 text with the PDF to distinguish parsing issues from retrieval misses,
 and require support from the requested table before returning a value.
+
+## Database
+
+PostgreSQL 16 stores report metadata, conversations and evaluation measurements.
+Chroma stores the searchable document chunks. The API keeps its existing single
+active report. Each Streamlit conversation supplies a UUID. HTTP clients can
+reuse the session cookie across turns or send a UUID in the optional
+`session_id` field. Start a new conversation with a new UUID. The default
+`/ask/` response body contains only `answer`.
+
+```mermaid
+erDiagram
+    reports ||--o{ chat_sessions : groups
+    chat_sessions ||--o{ chat_messages : contains
+    eval_runs ||--o{ eval_results : measures
+    reports {
+        int id PK "Stable report reference"
+        string filename "Original display name"
+        string sha256 UK "Deduplicates identical PDF bytes"
+        string company "Issuer supplied at upload"
+        string period "Reporting period supplied at upload"
+        int page_count "Physical PDF pages"
+        string chroma_collection UK "Latest vector vault for this report"
+        timestamp created_at "First registration"
+    }
+    chat_sessions {
+        uuid id PK "Conversation identity across requests"
+        int report_id FK "Document discussed"
+        timestamp created_at "First recorded turn"
+    }
+    chat_messages {
+        int id PK "Message identity and insertion order"
+        uuid session_id FK "Owning conversation"
+        string role "User or assistant"
+        text content "Question or answer"
+        string rewritten_query "Follow-up retrieval query"
+        float latency_ms "Elapsed answer time"
+        int prompt_tokens "Provider input usage"
+        int completion_tokens "Provider output usage"
+        timestamp created_at "Time recorded"
+    }
+    eval_runs {
+        int id PK "Run reference for analysis"
+        string source_sha256 UK "Prevents importing identical bytes twice"
+        string dataset_name "Question set filename"
+        string split "Development or held-out partition"
+        string model "Generation model at evaluation time"
+        string embedding_model "Embedding model at evaluation time"
+        int k "Requested retrieval depth"
+        string git_commit "Evaluated source revision when supplied"
+        string notes "Human-readable run name"
+        timestamp created_at "Import time"
+    }
+    eval_results {
+        int id PK "Measurement identity"
+        int run_id FK "Owning run"
+        string question_id "Stable dataset ID for comparison"
+        string category "Question type for grouped accuracy"
+        bool answerable "Eligibility for evidence measurement"
+        text answer "Generated response for review"
+        bool correct "Manual verdict"
+        bool retrieval_hit "Automatic gold-evidence match"
+        string failure_mode "Reviewed error classification"
+        float latency_ms "End-to-end question time"
+        int prompt_tokens "Measured input usage"
+        int completion_tokens "Measured output usage"
+    }
+```
+
+A unique constraint on `(run_id, question_id)` permits one observation per
+question per run. Foreign-key and timestamp indexes support joins and time
+filters. Deleting a conversation or evaluation run cascades to its child rows.
+Missing grades, measurements and historical model metadata stay NULL.
+Upload accepts optional multipart fields `company` and `period`. Unavailable
+PDF page counts also stay NULL. A repeated upload refreshes the vault
+reference while preserving the report ID and its existing conversations.
+
+### Start and migrate
+
+Copy `.env.example` to `.env`. Set both provider keys and choose
+`POSTGRES_USER`, `POSTGRES_PASSWORD` and `POSTGRES_DB`.
+Set `DATABASE_URL` to
+`postgresql+psycopg://<user>:<URL-encoded-password>@postgres:5432/<database>`
+using those values. Choose URL-safe names and percent-encode reserved characters
+in credentials in the URL. The PostgreSQL image uses the raw password.
+The named volume retains the database across container restarts.
+
+```sh
+docker compose up -d --build
+docker compose ps
+docker compose exec backend alembic current
+docker compose exec backend alembic upgrade head
+```
+
+Compose waits for the database health check on initial startup. The backend
+runs the migration before starting Uvicorn. During service, each successful
+upload or question uses a short database transaction. A failed write rolls
+back and logs a warning. The answer is still served. Missed turns during an
+outage are not replayed. A subsequent successful turn can register its report.
+For development access from the host, start with
+`docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d`.
+This publishes PostgreSQL only on `127.0.0.1:5432`.
+
+### Import and inspect a benchmark
+
+Keep raw files in `eval/results/`. The commands mount that directory read-only
+for the importer. The 35 reviewed question grades live in `eval/grades.csv`.
+The importer takes category and answerability from the matching dataset and
+stores selected metrics. Retrieved passages remain in the local JSON.
+
+```sh
+docker compose run --rm -v "./eval/results:/import:ro" backend python -m eval.import_results /import/dev-k5-15.json --dataset eval/arcelik-dev.jsonl --run-name arcelik-dev --grades eval/grades.csv
+docker compose run --rm -v "./eval/results:/import:ro" backend python -m eval.import_results /import/pekgy-dev-k5.json --dataset eval/pekgy-eval.jsonl --run-name pekgy-dev --grades eval/grades.csv
+docker compose run --rm -v "./eval/results:/import:ro" backend python -m eval.import_results /import/pekgy-test-k5.json --dataset eval/pekgy-eval.jsonl --run-name pekgy-held-out --grades eval/grades.csv
+docker compose exec backend python -m eval.report
+docker compose exec backend python -m eval.report --run-id 3
+```
+
+Use IDs printed by the importer. Reimporting identical bytes reuses the run
+and applies matching CSV grades. Omit `--grades` to keep the verdicts in the
+source artifact. Use the original unchanged JSON and a separate CSV to revise
+grades. Apply a CSV only to runs reviewed with those labels. To compare two
+revisions of the same dataset and split, pass both `--baseline-id` and
+`--run-id`. All seven parameterized queries are in `sql/analysis.sql`.
+
+Examples from the three original artifacts, imported into PostgreSQL 16:
+
+| Run | Questions | Correct / graded | Automatic hits / answerable | SQL p50 (ms) | SQL p95 (ms) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Arçelik dev | 15 | 14/15 | 12/14 | 3357.14 | 28642.63 |
+| PEKGY dev | 10 | 10/10 | 9/9 | 1590.87 | 2577.89 |
+| PEKGY held-out | 10 | 8/10 | 6/8 | 1987.26 | 3404.35 |
+
+```sql
+SELECT COUNT(*) FILTER (WHERE retrieval_hit) AS hits, COUNT(*) AS answerable
+FROM eval_results WHERE answerable;
+-- hits = 27, answerable = 31 (three-run database)
+
+SELECT failure_mode, COUNT(*) FROM eval_results
+WHERE correct IS FALSE GROUP BY failure_mode ORDER BY COUNT(*) DESC;
+-- retrieval_miss = 2, incomplete_answer = 1
+```
+
+The original JSON has 35 blank manual verdicts. The approved CSV supplies
+32 correct answers and three failures. All 35 questions have grades. The SQL
+accuracy is 32/35 (91.43%), matching the manual benchmark. PostgreSQL uses interpolated
+`percentile_cont`, whereas the historical evaluator selects nearest-rank
+observations. This accounts for the latency differences between the two tables.
+
+Fast storage tests run migrations on SQLite. The PostgreSQL driver is installed
+in the Docker image and PostgreSQL CI job. Windows users can keep local tests
+on SQLite and run database commands inside Docker.
 
 ## 🚧 Limitations & Roadmap (WIP)
 
