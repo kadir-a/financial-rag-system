@@ -1,7 +1,8 @@
 import os
+
 from dotenv import load_dotenv
-from llama_parse import LlamaParse
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from llama_parse import LlamaParse
 
 # Load API keys from the .env file
 load_dotenv()

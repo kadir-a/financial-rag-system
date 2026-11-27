@@ -1,7 +1,9 @@
 import os
 import shutil
+
 from langchain_community.vectorstores import Chroma
 from langchain_openai import OpenAIEmbeddings
+
 
 class VectorStoreManager:
     def __init__(self, base_db_path="./data/chroma_db"):
@@ -9,7 +11,7 @@ class VectorStoreManager:
         self.embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
 
     def _cleanup_old_vaults(self, current_collection):
-        """Background garbage collector: Cleans up old vaults from the disk, silently skips locked ones."""
+        """Remove old vaults and skip locked directories."""
         if not os.path.exists(self.base_db_path):
             return
         
@@ -21,8 +23,8 @@ class VectorStoreManager:
                     shutil.rmtree(folder_path)
                     print(f"🧹 Old ghost vault successfully destroyed: {folder}")
                 except Exception:
-                    # If Windows is holding the file (PermissionError), do not crash the system, pass silently.
-                    # It will be deleted on the next server restart anyway.docker compose up -d --build
+                    # Windows may still hold the file open.
+                    # Retry on a later cleanup.
                     pass    
                     
     def create_and_store_embeddings(self, chunks: list, collection_name: str):
