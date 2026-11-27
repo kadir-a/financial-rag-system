@@ -1,0 +1,4 @@
+question_id,correct,failure_mode
+q15,false,incomplete_answer
+pekgy-12,false,retrieval_miss
+pekgy-17,false,retrieval_miss
