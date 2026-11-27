@@ -47,11 +47,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: touch .env && docker compose build
+      - name: Build and smoke-test Compose startup
+        run: |
+          echo "DATABASE_URL=$DATABASE_URL" > .env
+          docker compose build
+          docker compose up -d backend
+          curl --fail --retry 30 --retry-delay 2 --retry-all-errors http://localhost:8000/
+          docker compose exec -T backend alembic current --check-heads
         env:
           POSTGRES_USER: ci
           POSTGRES_DB: ci
           POSTGRES_PASSWORD: ${{ github.run_id }}
+          DATABASE_URL: postgresql+psycopg://ci:${{ github.run_id }}@postgres/ci
 
   postgres:
     runs-on: ubuntu-latest

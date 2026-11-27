@@ -41,5 +41,7 @@ def test_postgres_percentiles_and_comparison(capsys):
         print_report(db, run_id=runs[1], baseline_id=runs[0])
         output = capsys.readouterr().out
         assert "200.00" in output and "290.00" in output
-        assert "before" in output and "after" in output
+        assert any(
+            line.split() == ["q1", "|", "before", "|", "after"] for line in output.splitlines()
+        )
         assert "100.00" in output
