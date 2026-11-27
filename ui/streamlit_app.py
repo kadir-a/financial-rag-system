@@ -1,3 +1,5 @@
+from uuid import uuid4
+
 import requests
 import streamlit as st
 
@@ -24,6 +26,7 @@ with st.sidebar:
                         st.success("✅ Document successfully ingested into the vector vault.")
                         # Purge session state (chat history) upon new document ingestion
                         st.session_state.messages = []
+                        st.session_state.chat_id = str(uuid4())
                     else:
                         st.error(f"Ingestion Failed: {response.json().get('detail')}")
                 except Exception:
@@ -58,6 +61,7 @@ if prompt := st.chat_input("What insights do you need from the financial report?
                 
                 payload = {
                     "question": prompt,
+                    "session_id": st.session_state.setdefault("chat_id", str(uuid4())),
                     "chat_history": chat_history
                 }
                 

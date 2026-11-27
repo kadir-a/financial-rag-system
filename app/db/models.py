@@ -7,8 +7,15 @@ from sqlalchemy import CheckConstraint, DateTime, ForeignKey, String, Text, Uniq
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 FAILURE_MODES = (
-    "retrieval_miss", "parse_error", "wrong_period", "calc_error", "hallucination",
-    "rewrite_error", "abstention_fail", "unit_error", "incomplete_answer",
+    "retrieval_miss",
+    "parse_error",
+    "wrong_period",
+    "calc_error",
+    "hallucination",
+    "rewrite_error",
+    "abstention_fail",
+    "unit_error",
+    "incomplete_answer",
 )
 
 

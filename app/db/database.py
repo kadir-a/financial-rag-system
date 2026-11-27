@@ -17,9 +17,11 @@ def engine_for(url):
     options = {"connect_timeout": 2} if dialect == "postgresql" else {}
     engine = create_engine(url, connect_args=options, pool_pre_ping=True, hide_parameters=True)
     if dialect == "sqlite":
+
         @event.listens_for(engine, "connect")
         def enable_foreign_keys(connection, _record):
             connection.execute("PRAGMA foreign_keys=ON")
+
     return engine
 
 
