@@ -1,7 +1,7 @@
 name: CI
 on:
   push:
-    branches: [main, ci-tests]
+    branches: [main, ci-tests, sql-postgres]
   pull_request:
     branches: [main, ci-tests]
 
@@ -48,3 +48,35 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: touch .env && docker compose build
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_DB: ci
+          POSTGRES_PASSWORD: ${{ github.run_id }}
+
+  postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_DB: ci
+          POSTGRES_PASSWORD: ${{ github.run_id }}
+        ports:
+          - 5432/tcp
+        options: >-
+          --health-cmd "pg_isready -U ci -d ci"
+          --health-interval 5s --health-timeout 3s --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - run: pip install "sqlalchemy>=2,<2.1" "alembic>=1.13,<2" "psycopg[binary]>=3.1,<4" python-dotenv pytest
+      - name: Migrate and verify PostgreSQL analytics
+        env:
+          DATABASE_URL: postgresql+psycopg://ci:${{ github.run_id }}@localhost:${{ job.services.postgres.ports[5432] }}/ci
+        run: |
+          alembic upgrade head
+          alembic check
+          pytest -q -m postgres tests/test_postgres.py
