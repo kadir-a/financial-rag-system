@@ -40,11 +40,21 @@ def import_results(db, source, dataset, run_name, grades=None):
     digest = hashlib.sha256(raw).hexdigest()
     cases = {q["id"]: q for q in read_cases(dataset, artifact["report"], artifact["split"])}
     manual = read_grades(grades)
-    stmt = insert_for(db, EvalRun).values(
-        source_sha256=digest, dataset_name=dataset.name, split=artifact["split"], k=artifact["k"],
-        model=artifact.get("model"), embedding_model=artifact.get("embedding_model"),
-        git_commit=artifact.get("git_commit"), notes=run_name,
-    ).on_conflict_do_nothing(index_elements=["source_sha256"]).returning(EvalRun.id)
+    stmt = (
+        insert_for(db, EvalRun)
+        .values(
+            source_sha256=digest,
+            dataset_name=dataset.name,
+            split=artifact["split"],
+            k=artifact["k"],
+            model=artifact.get("model"),
+            embedding_model=artifact.get("embedding_model"),
+            git_commit=artifact.get("git_commit"),
+            notes=run_name,
+        )
+        .on_conflict_do_nothing(index_elements=["source_sha256"])
+        .returning(EvalRun.id)
+    )
     run_id = db.scalar(stmt)
     created = run_id is not None
     if created:
@@ -57,15 +67,20 @@ def import_results(db, source, dataset, run_name, grades=None):
             case = cases[qid]
             review = row.get("review") or {}
             seconds = (row.get("latency_seconds") or {}).get("total")
-            db.add(EvalResult(
-                run_id=run_id, question_id=qid, category=case["category"],
-                answerable=case["answerable"], answer=row["answer"],
-                correct=review.get("answer_correct", row.get("correct")),
-                failure_mode=review.get("failure_mode", row.get("failure_mode")),
-                retrieval_hit=row.get("evidence_hit") if case["answerable"] else None,
-                latency_ms=None if seconds is None else seconds * 1000,
-                **token_counts({**row, "had_history": bool(case.get("history"))}),
-            ))
+            db.add(
+                EvalResult(
+                    run_id=run_id,
+                    question_id=qid,
+                    category=case["category"],
+                    answerable=case["answerable"],
+                    answer=row["answer"],
+                    correct=review.get("answer_correct", row.get("correct")),
+                    failure_mode=review.get("failure_mode", row.get("failure_mode")),
+                    retrieval_hit=row.get("evidence_hit") if case["answerable"] else None,
+                    latency_ms=None if seconds is None else seconds * 1000,
+                    **token_counts({**row, "had_history": bool(case.get("history"))}),
+                )
+            )
         if not seen:
             raise ValueError("Result file contains no questions")
         db.flush()
