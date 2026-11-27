@@ -277,7 +277,7 @@ This publishes PostgreSQL only on `127.0.0.1:5432`.
 ### Import and inspect a benchmark
 
 Keep raw files in `eval/results/`. The commands mount that directory read-only
-for the importer. Only the three approved labels live in `eval/grades.csv`.
+for the importer. The 35 reviewed question grades live in `eval/grades.csv`.
 The importer takes category and answerability from the matching dataset and
 stores selected metrics. Retrieved passages remain in the local JSON.
 
@@ -298,11 +298,11 @@ revisions of the same dataset and split, pass both `--baseline-id` and
 
 Examples from the three original artifacts, imported into PostgreSQL 16:
 
-| Run | Questions | Confirmed grades | Automatic hits / answerable | SQL p50 (ms) | SQL p95 (ms) |
+| Run | Questions | Correct / graded | Automatic hits / answerable | SQL p50 (ms) | SQL p95 (ms) |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Arçelik dev | 15 | 1 | 12/14 | 3357.14 | 28642.63 |
-| PEKGY dev | 10 | 0 | 9/9 | 1590.87 | 2577.89 |
-| PEKGY held-out | 10 | 2 | 6/8 | 1987.26 | 3404.35 |
+| Arçelik dev | 15 | 14/15 | 12/14 | 3357.14 | 28642.63 |
+| PEKGY dev | 10 | 10/10 | 9/9 | 1590.87 | 2577.89 |
+| PEKGY held-out | 10 | 8/10 | 6/8 | 1987.26 | 3404.35 |
 
 ```sql
 SELECT COUNT(*) FILTER (WHERE retrieval_hit) AS hits, COUNT(*) AS answerable
@@ -315,8 +315,8 @@ WHERE correct IS FALSE GROUP BY failure_mode ORDER BY COUNT(*) DESC;
 ```
 
 The original JSON has 35 blank manual verdicts. The approved CSV supplies
-three failures. Run accuracy stays NULL until every question has a verdict.
-The earlier manual benchmark reports 32/35. PostgreSQL uses interpolated
+32 correct answers and three failures. All 35 questions have grades. The SQL
+accuracy is 32/35 (91.43%), matching the manual benchmark. PostgreSQL uses interpolated
 `percentile_cont`, whereas the historical evaluator selects nearest-rank
 observations. This accounts for the latency differences between the two tables.
 
